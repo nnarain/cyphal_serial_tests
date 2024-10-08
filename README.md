@@ -4,8 +4,8 @@ Testing using Cyphal/Serial implementation.
 
 **Dependencies**
 
-https://github.com/coderkalyan/libserard
-https://github.com/pavel-kirienko/o1heap
+* https://github.com/coderkalyan/libserard
+* https://github.com/pavel-kirienko/o1heap
 
 **Reference**
 
