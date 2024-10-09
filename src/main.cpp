@@ -4,6 +4,7 @@
 #include <o1heap.h>
 
 #include <uavcan/node/Heartbeat_1_0.h>
+#include <uavcan/primitive/scalar/Bit_1_0.h>
 
 #define HEARTBEAT_PERIOD 1000
 
@@ -34,6 +35,10 @@ static const SerardMemoryResource allocator = {
 
 static const SerardNodeID NODE_ID = 5;
 static Serard serard;
+static SerardReassembler reassembler;
+
+static constexpr SerardPortID BIT_PORT_ID = 1620U;
+static SerardRxSubscription cmd_sub;
 
 static uint32_t last_heartbeat = 0;
 
@@ -43,6 +48,30 @@ static bool serialEmitter(void* const, uint8_t size, const uint8_t* data)
   return true;
 }
 
+static void cmdCallback(const uavcan_primitive_scalar_Bit_1_0& msg)
+{
+  if (msg.value)
+  {
+    digitalWrite(LED_BUILTIN, HIGH);
+  }
+  else
+  {
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+}
+
+static void onReceive(const SerardRxTransfer* const transfer)
+{
+  const SerardTransferMetadata* const metadata = &transfer->metadata;
+
+  uavcan_primitive_scalar_Bit_1_0 bit;
+  size_t size = transfer->payload_size;
+  uavcan_primitive_scalar_Bit_1_0_deserialize_(&bit, reinterpret_cast<const uint8_t*>(transfer->payload), &size);
+  serardFree(nullptr, transfer->payload_extent, transfer->payload);
+
+  cmdCallback(bit);
+}
+
 void setup() {
   // heap_base = new uint8_t[HEAP_SIZE];
   // Allocator setup for serard
@@ -50,8 +79,15 @@ void setup() {
 
   // Initialize serard
   serard = serardInit(allocator, allocator);
+  reassembler = serardReassemblerInit();
 
+  // Setup subscribers
+  serardRxSubscribe(&serard, SerardTransferKindMessage, BIT_PORT_ID, uavcan_primitive_scalar_Bit_1_0_EXTENT_BYTES_, 10000, &cmd_sub);
+
+  // Hardware setup
   Serial.begin(115200);
+
+  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 void loop() {
@@ -82,5 +118,17 @@ void loop() {
       .remote_node_id = NODE_ID,
     };
     serardTxPush(&serard, &metadata, buf_size, buf, nullptr, &serialEmitter);
+  }
+
+  // Handle incoming data
+  uint8_t buf[256];
+  SerardRxTransfer transfer;
+  SerardRxSubscription* sub{nullptr};
+
+  size_t payload_size = Serial.readBytes(reinterpret_cast<char*>(buf), 256);
+
+
+  if (serardRxAccept(&serard, &reassembler, micros(), &payload_size, buf, &transfer, &sub)) {
+    onReceive(&transfer);
   }
 }
